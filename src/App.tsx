@@ -445,14 +445,14 @@ export default function App() {
       try {
         const ai = new GoogleGenAI({ apiKey: finalKey });
         const response = await ai.models.generateContent({
-          // UBAH KE 1.5-FLASH: Jauh lebih stabil dan minim antrean untuk API Gratis
-          model: "gemini-1.5-flash", 
+          // KEMBALIKAN KE 2.0: Ini adalah model yang valid di endpoint Anda
+          model: "gemini-2.0-flash", 
           contents: [{ parts: [{ text: userQuery }] }],
           config: {
             systemInstruction: systemPrompt,
             responseMimeType: "application/json",
-            // Kurangi sedikit maxOutputTokens untuk meringankan beban server pada Free Tier
-            maxOutputTokens: 3000, 
+            // Turunkan maxOutputTokens menjadi 2500 agar request lebih cepat diproses oleh server gratis
+            maxOutputTokens: 2500, 
             temperature: 0.7
           }
         });
@@ -474,9 +474,9 @@ export default function App() {
         // Jika error 429 (Too Many Requests) atau 503 (Service Unavailable)
         if (errorMessage.includes("429") || errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("503")) {
           if (i < maxRetries - 1) {
-            // PERPANJANG JEDA: Tunggu 5 detik agar kuota Google per menit sempat ter-reset
-            console.log(`Server sibuk, jeda 5 detik sebelum mengulang... (Percobaan ke-${i + 2})`);
-            await new Promise(resolve => setTimeout(resolve, 5000)); 
+            // PERPANJANG JEDA: Tunggu 8 detik agar kuota Google per menit sempat ter-reset
+            console.log(`Server sibuk, jeda 8 detik sebelum mengulang... (Percobaan ke-${i + 2})`);
+            await new Promise(resolve => setTimeout(resolve, 8000)); 
             continue; 
           } else {
             console.error("Gagal setelah 3x percobaan:", e);
