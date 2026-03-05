@@ -403,8 +403,8 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isScrolling, scrollSpeed]);
 
- const handleGenerate = async () => {
-    const finalKey = userApiKey || process.env.VITE_GEMINI_API_KEY; // Pastikan pakai VITE_ jika butuh fallback lokal
+  const handleGenerate = async () => {
+    const finalKey = userApiKey || process.env.GEMINI_API_KEY;
     
     if (!finalKey) {
       setError("API Key tidak ditemukan. Silakan buka menu Pengaturan (ikon gerigi) untuk memasukkan API Key Google AI Anda secara manual.");
@@ -445,14 +445,12 @@ export default function App() {
       try {
         const ai = new GoogleGenAI({ apiKey: finalKey });
         const response = await ai.models.generateContent({
-          // KEMBALIKAN KE 2.0: Ini adalah model yang valid di endpoint Anda
-          model: "gemini-2.0-flash", 
+          model: "gemini-2.0-flash",
           contents: [{ parts: [{ text: userQuery }] }],
           config: {
             systemInstruction: systemPrompt,
             responseMimeType: "application/json",
-            // Turunkan maxOutputTokens menjadi 2500 agar request lebih cepat diproses oleh server gratis
-            maxOutputTokens: 2500, 
+            maxOutputTokens: 4000,
             temperature: 0.7
           }
         });
@@ -471,30 +469,29 @@ export default function App() {
       } catch (e: any) {
         const errorMessage = e.message || String(e);
 
-        // Jika error 429 (Too Many Requests) atau 503 (Service Unavailable)
-        if (errorMessage.includes("429") || errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("503")) {
+        // Jika error 429 / Resource Exhausted dari server Google
+        if (errorMessage.includes("429") || errorMessage.includes("RESOURCE_EXHAUSTED")) {
           if (i < maxRetries - 1) {
-            // PERPANJANG JEDA: Tunggu 8 detik agar kuota Google per menit sempat ter-reset
-            console.log(`Server sibuk, jeda 8 detik sebelum mengulang... (Percobaan ke-${i + 2})`);
-            await new Promise(resolve => setTimeout(resolve, 8000)); 
-            continue; 
+            console.log(`Server sibuk, mengulang diam-diam... (Percobaan ke-${i + 2})`);
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Diam-diam jeda 2 detik
+            continue; // Putar ulang secara otomatis
           } else {
             console.error("Gagal setelah 3x percobaan:", e);
-            // Pesan error yang lebih jelas untuk pengguna
-            setError("Sistem Google AI sedang sangat sibuk karena Anda menggunakan API Key versi gratis. Mohon tunggu sekitar 1 menit, lalu klik 'Buat Khutbah' kembali.");
+            setError("Sistem antrean Google sedang penuh. Mohon tunggu 30 detik lalu klik 'Buat Khutbah' kembali.");
             setStep('input');
             return;
           }
         } else {
-          // Jika error lain (misal API Key salah atau JSON gagal)
+          // Jika error lain (JSON gagal, dll)
           console.error(e);
-          setError(`Terjadi kesalahan: ${errorMessage}. Pastikan API Key Anda valid.`);
+          setError(`Gagal: ${errorMessage}`);
           setStep('input');
           return;
         }
       }
     }
   };
+
   const formatLongText = (text?: string) => {
     if (!text) return null;
     const MAX_LENGTH = 450;
