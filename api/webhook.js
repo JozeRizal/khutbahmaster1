@@ -1,33 +1,40 @@
 import { createClient } from '@supabase/supabase-js';
 
-// 1. Memanggil kunci rahasia dari Environment Variables Vercel
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY; 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 export default async function handler(req, res) {
-  // Pastikan hanya menerima request tipe POST (standar Webhook Scalev)
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    // 2. Menangkap data yang dikirim oleh Scalev
-    const dataScalev = req.body;
+    const payload = req.body;
+    
+    // 1. Buka "bungkusan" data asli dari Scalev sesuai dokumentasi
+    const orderData = payload.data;
 
-    // Menangkap email pembeli (biasanya Scalev menaruhnya di object customer atau langsung di root)
-    const emailPembeli = dataScalev?.customer?.email || dataScalev?.email;
-
-    if (!emailPembeli) {
-      return res.status(400).json({ error: 'Email pembeli tidak ditemukan dari Scalev' });
+    // 2. Pastikan webhook ini berasal dari event perubahan status pembayaran, 
+    // dan pastikan status pembayarannya benar-benar "paid" (lunas)
+    if (payload.event !== 'order.payment_status_changed' || orderData?.payment_status !== 'paid') {
+      return res.status(200).json({ 
+        message: `Diabaikan. Event: ${payload.event}, Status: ${orderData?.payment_status}` 
+      });
     }
 
-    // 3. Menghitung tanggal kedaluwarsa (Hari ini + 6 Bulan)
+    // 3. Jika LUNAS, ambil email pembeli (di Scalev biasanya di dalam object customer)
+    const emailPembeli = orderData?.customer?.email || orderData?.email;
+
+    if (!emailPembeli) {
+      return res.status(400).json({ error: 'Email pembeli tidak ditemukan' });
+    }
+
+    // 4. Menghitung tanggal kedaluwarsa (Hari ini + 6 Bulan)
     const tglKedaluwarsa = new Date();
     tglKedaluwarsa.setMonth(tglKedaluwarsa.getMonth() + 6);
 
-    // 4. Menyimpan data ke Supabase
-    // Kita gunakan fitur "upsert": Kalau email baru, ditambahkan. Kalau email lama (perpanjang), di-update tanggalnya.
+    // 5. Menyimpan/Memperbarui data ke Supabase
     const { error } = await supabase
       .from('akses_user')
       .upsert(
@@ -43,9 +50,8 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Gagal menyimpan ke database' });
     }
 
-    // 5. Memberikan laporan sukses ke Scalev
     return res.status(200).json({ 
-      message: 'Sukses! Akses 6 bulan telah diaktifkan', 
+      message: 'Sukses! Akses 6 bulan telah diaktifkan untuk pesanan LUNAS', 
       email: emailPembeli 
     });
 
