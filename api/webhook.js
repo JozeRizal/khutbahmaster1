@@ -1,14 +1,25 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_KEY; 
-const supabase = createClient(supabaseUrl, supabaseKey);
-
 export default async function handler(req, res) {
-  // 1. Terima request GET (Platform sering mengecek URL pakai GET saat di-save)
+  // 1. Terima request GET untuk tes Scalev & Browser
   if (req.method === 'GET') {
     return res.status(200).json({ message: 'Webhook Vercel aktif dan siap menerima data' });
   }
+
+  // 2. Pindahkan pemanggilan kunci ke DALAM fungsi agar tidak crash jika kuncinya hilang
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_KEY; 
+
+  if (!supabaseUrl || !supabaseKey) {
+    console.error("Kunci Supabase tidak ditemukan!");
+    // Jika Vercel dites saat kunci hilang, ia akan mengembalikan pesan ini, BUKAN crash 500
+    return res.status(200).json({ 
+      error: 'Vercel aktif, TAPI kunci Supabase (Environment Variables) belum terpasang dengan benar di dashboard Vercel.' 
+    });
+  }
+
+  // 3. Inisialisasi Supabase
+  const supabase = createClient(supabaseUrl, supabaseKey);
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -17,25 +28,20 @@ export default async function handler(req, res) {
   try {
     const payload = req.body;
     
-    // 2. TANGKAP "PING TES" DARI SCALEV
-    // Jika Scalev hanya mengetes URL (tanpa data pesanan), balas status 200 (Sukses) agar bisa di-save
+    // TANGKAP "PING TES" DARI SCALEV
     if (!payload || !payload.data) {
       return res.status(200).json({ message: 'Ping tes dari Scalev berhasil diterima' });
     }
 
     const orderData = payload.data;
 
-    // 3. Proses Pesanan Asli
     if (payload.event !== 'order.payment_status_changed' || orderData?.payment_status !== 'paid') {
-      return res.status(200).json({ 
-        message: `Diabaikan. Event: ${payload.event}, Status: ${orderData?.payment_status}` 
-      });
+      return res.status(200).json({ message: `Diabaikan. Status: ${orderData?.payment_status}` });
     }
 
     const emailPembeli = orderData?.customer?.email || orderData?.email;
 
     if (!emailPembeli) {
-      // Balas status 200 juga jika email kosong dari Scalev agar webhook tidak putus
       return res.status(200).json({ message: 'Diabaikan, email pembeli tidak ditemukan' });
     }
 
@@ -45,10 +51,7 @@ export default async function handler(req, res) {
     const { error } = await supabase
       .from('akses_user')
       .upsert(
-        { 
-          email: emailPembeli, 
-          tgl_kedaluwarsa: tglKedaluwarsa.toISOString() 
-        },
+        { email: emailPembeli, tgl_kedaluwarsa: tglKedaluwarsa.toISOString() },
         { onConflict: 'email' }
       );
 
@@ -57,14 +60,10 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Gagal menyimpan ke database' });
     }
 
-    return res.status(200).json({ 
-      message: 'Sukses! Akses 6 bulan diaktifkan', 
-      email: emailPembeli 
-    });
+    return res.status(200).json({ message: 'Sukses! Akses 6 bulan diaktifkan', email: emailPembeli });
 
   } catch (err) {
     console.error('Terjadi kesalahan sistem:', err);
-    // Ubah ke 200 khusus agar Scalev tidak mendeteksi error saat menyimpan
-    return res.status(200).json({ message: 'Terjadi kesalahan internal, tapi koneksi webhook aman' });
+    return res.status(200).json({ message: 'Terjadi kesalahan internal, tapi koneksi aman' });
   }
 }
